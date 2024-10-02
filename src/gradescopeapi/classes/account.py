@@ -1,6 +1,7 @@
 from bs4 import BeautifulSoup
 from typing import List, Dict
 import time
+from requests_toolbelt.multipart.encoder import MultipartEncoder
 
 from gradescopeapi.classes._helpers._course_helpers import (
     get_courses_info,
@@ -14,7 +15,6 @@ from gradescopeapi.classes._helpers._assignment_helpers import (
 )
 from gradescopeapi.classes.assignments import Assignment
 from gradescopeapi.classes.member import Member
-
 
 class Account:
     def __init__(self, session):
@@ -140,6 +140,63 @@ class Account:
             assignment_info_list = get_assignments_student_view(coursepage_soup)
 
         return assignment_info_list
+
+    def create_assignment(self, course_id: str,
+             name: str):
+
+        GS_NEW_ASSIGNMENT_ENDPOINT = f"https://www.gradescope.com/courses/{course_id}/assignments/new"
+        GS_POST_ASSIGNMENT_ENDPOINT = (
+            f"https://www.gradescope.com/courses/{course_id}/assignments/"
+        )
+    
+        # Get auth token
+        response = self.session.get(GS_NEW_ASSIGNMENT_ENDPOINT)
+        soup = BeautifulSoup(response.text, "html.parser")
+        #auth_token = soup.select_one('input[name="authenticity_token"]')["value"]
+        auth_token = soup.find_all(attrs={"name":"csrf-token"})[0]["content"]
+    
+        # Setup multipart form data
+        multipart = MultipartEncoder(
+            fields={
+                #"utf8": "✓",
+                #"_method": "patch",
+                "authenticity_token": auth_token,
+                "assignment[title]": ("HOMEWORK 2"),
+                "template_pdf": ('filename', open('template.pdf', 'rb'), 'application/pdf'),
+                "assignment[submissions_anonymized]": ("0"),
+                "assignment[student_submission]": ("true"),
+                "assignment[release_date_string]": (
+                    "2024-09-08T09:00" #release_date.strftime("%Y-%m-%dT%H:%M") if release_date else ""
+                ),
+                "assignment[due_date_string]": (
+                    "2024-09-15T23:59" #due_date.strftime("%Y-%m-%dT%H:%M") if due_date else ""
+                ),
+                "assignment[allow_late_submissions]": "0", #"1" if late_due_date else "0",
+                "assignment[hard_due_date_string]": (
+                    "2024-09-18T23:59" #late_due_date.strftime("%Y-%m-%dT%H:%M") if late_due_date else ""
+                ),
+                "assignment[enforce_time_limit]": ("0"),
+                "assignment[submission_type]": ("image"),
+                "assignment[group_submission]": ("0"),
+                "assignment[when_to_create_rubric]": ("while_grading"),
+                "assignment[template_visible_to_students]": ("0"),
+                #"commit": "Save",
+            }
+        )
+        headers = {
+            "Content-Type": multipart.content_type,
+            "Referer": GS_NEW_ASSIGNMENT_ENDPOINT,
+        }
+    
+        response = self.session.post(
+            GS_POST_ASSIGNMENT_ENDPOINT, data=multipart, headers=headers
+        )
+    
+        print(response)
+        print(response.text)
+        #breakpoint()
+        return response.status_code == 200
+
 
     def get_assignment_submissions(
         self, course_id: str, assignment_id: str
